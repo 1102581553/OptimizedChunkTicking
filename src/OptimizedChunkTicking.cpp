@@ -43,8 +43,8 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
     auto& enttRegistry = registry.mRegistry.get();
     auto view = enttRegistry.template view<ActorComponent>();
     for (auto entity : view) {
-        // 聚合初始化 EntityContext（成员顺序与声明一致）
-        EntityContext ctx{registry, enttRegistry, entity};
+        // 修正初始化顺序：先 enttRegistry，再 registry，最后 entity
+        EntityContext ctx{enttRegistry, registry, entity};
         Actor* actor = Actor::tryGetFromEntity(ctx, false);
         if (!actor) continue;
 
