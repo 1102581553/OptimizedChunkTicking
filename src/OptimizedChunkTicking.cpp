@@ -7,6 +7,7 @@
 
 #include "mc/deps/ecs/EntityId.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"   // 添加 EntityContext
 #include "mc/deps/vanilla_components/ActorComponent.h"
 #include "mc/entity/systems/LevelChunkTickingSystem.h"
 #include "mc/world/actor/Actor.h"
@@ -20,47 +21,48 @@
 
 namespace optimized_chunk_ticking {
 
-// 自动注册的 Hook，替换 LevelChunkTickingSystem::tick
+// 自动注册的 Hook，替换 LevelChunkTickingSystem::tick（虚函数需加 $ 前缀）
 LL_AUTO_TYPE_INSTANCE_HOOK(
     LevelChunkTickingSystemTickHook,
     ll::memory::HookPriority::Normal,
     LevelChunkTickingSystem,
-    &LevelChunkTickingSystem::tick,
+    &LevelChunkTickingSystem::$tick,   // 注意 $tick
     void,
     ::EntityRegistry& registry
 ) {
-    // 获取当前 Level（可能为空，则回退到原函数）
     auto level = ll::service::getLevel();
     if (!level) {
         return origin(registry);
     }
 
-    // 存储需要 tick 的区块，按维度分组去重
     std::unordered_map<DimensionType, std::unordered_set<ChunkPos>> chunksToTick;
     std::unordered_map<DimensionType, BlockSource*> dimToRegion;
 
+    // 获取底层的 entt::basic_registry
+    auto& enttRegistry = registry.mRegistry.get();
+
     // 遍历所有拥有 ActorComponent 的实体
-    auto view = registry.mRegistry.template view<ActorComponent>();
+    auto view = enttRegistry.template view<ActorComponent>();
     for (auto entity : view) {
-        Actor* actor = Actor::tryGetFromEntity(entity, registry, false);
+        // 构造 EntityContext（使用聚合初始化）
+        EntityContext ctx{registry, enttRegistry, entity};
+        Actor* actor = Actor::tryGetFromEntity(ctx, false);
         if (!actor) continue;
 
         DimensionType dimId = actor->getDimensionId();
         BlockSource& region = actor->getDimensionBlockSource();
 
-        // 缓存每个维度的 BlockSource
         if (dimToRegion.find(dimId) == dimToRegion.end()) {
             dimToRegion[dimId] = &region;
         }
 
-        // 获取区块 tick 半径（模拟距离）
         uint range = region.getLevel().getChunkTickRange();
         Vec3 pos = actor->getPosition();
         ChunkPos center((int)std::floor(pos.x) >> 4, (int)std::floor(pos.z) >> 4);
 
-        // 遍历周围区块
-        for (int dx = -range; dx <= range; ++dx) {
-            for (int dz = -range; dz <= range; ++dz) {
+        // 遍历周围区块（强制转换 range 为 int 以避免有符号/无符号比较）
+        for (int dx = -static_cast<int>(range); dx <= static_cast<int>(range); ++dx) {
+            for (int dz = -static_cast<int>(range); dz <= static_cast<int>(range); ++dz) {
                 ChunkPos cp(center.x + dx, center.z + dz);
                 if (region.getChunk(cp) != nullptr) {
                     chunksToTick[dimId].insert(cp);
@@ -81,11 +83,8 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
             }
         }
     }
-
-    // 原函数被完全替换，不调用 origin
 }
 
-// 模组生命周期
 bool OptimizedChunkTicking::load() {
     getSelf().getLogger().info("Loading OptimizedChunkTicking...");
     return true;
@@ -93,13 +92,11 @@ bool OptimizedChunkTicking::load() {
 
 bool OptimizedChunkTicking::enable() {
     getSelf().getLogger().info("Enabling OptimizedChunkTicking...");
-    // Hook 已自动注册
     return true;
 }
 
 bool OptimizedChunkTicking::disable() {
     getSelf().getLogger().info("Disabling OptimizedChunkTicking...");
-    // 自动注册的 Hook 会在模组卸载时自动清理
     return true;
 }
 
