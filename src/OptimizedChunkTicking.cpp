@@ -6,7 +6,7 @@
 #include "ll/api/mod/RegisterHelper.h"
 
 #include "mc/deps/ecs/EntityId.h"
-#include "mc/deps/ecs/EntityRegistry.h"
+#include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
 #include "mc/deps/vanilla_components/ActorComponent.h"
 #include "mc/entity/systems/LevelChunkTickingSystem.h"
 #include "mc/world/actor/Actor.h"
