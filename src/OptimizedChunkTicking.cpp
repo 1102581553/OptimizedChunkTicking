@@ -7,7 +7,7 @@
 
 #include "mc/deps/ecs/EntityId.h"
 #include "mc/deps/ecs/gamerefs_entity/EntityRegistry.h"
-#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"   // 添加 EntityContext
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 #include "mc/deps/vanilla_components/ActorComponent.h"
 #include "mc/entity/systems/LevelChunkTickingSystem.h"
 #include "mc/world/actor/Actor.h"
@@ -21,12 +21,12 @@
 
 namespace optimized_chunk_ticking {
 
-// 自动注册的 Hook，替换 LevelChunkTickingSystem::tick（虚函数需加 $ 前缀）
+// Hook LevelChunkTickingSystem::tick（虚函数需使用 $ 前缀）
 LL_AUTO_TYPE_INSTANCE_HOOK(
     LevelChunkTickingSystemTickHook,
     ll::memory::HookPriority::Normal,
     LevelChunkTickingSystem,
-    &LevelChunkTickingSystem::$tick,   // 注意 $tick
+    &LevelChunkTickingSystem::$tick,
     void,
     ::EntityRegistry& registry
 ) {
@@ -44,8 +44,12 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
     // 遍历所有拥有 ActorComponent 的实体
     auto view = enttRegistry.template view<ActorComponent>();
     for (auto entity : view) {
-        // 构造 EntityContext（使用聚合初始化）
-        EntityContext ctx{registry, enttRegistry, entity};
+        // 正确构造 EntityContext
+        EntityContext ctx;
+        ctx.mRegistry = registry;                // EntityRegistry&
+        ctx.mEnTTRegistry = enttRegistry;         // entt::basic_registry&
+        ctx.mEntity = entity;                     // EntityId
+
         Actor* actor = Actor::tryGetFromEntity(ctx, false);
         if (!actor) continue;
 
@@ -60,7 +64,7 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
         Vec3 pos = actor->getPosition();
         ChunkPos center((int)std::floor(pos.x) >> 4, (int)std::floor(pos.z) >> 4);
 
-        // 遍历周围区块（强制转换 range 为 int 以避免有符号/无符号比较）
+        // 遍历周围区块（强制转换 range 为 int 以避免符号警告）
         for (int dx = -static_cast<int>(range); dx <= static_cast<int>(range); ++dx) {
             for (int dz = -static_cast<int>(range); dz <= static_cast<int>(range); ++dz) {
                 ChunkPos cp(center.x + dx, center.z + dz);
