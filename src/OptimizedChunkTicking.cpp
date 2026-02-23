@@ -1,5 +1,8 @@
 #include "OptimizedChunkTicking.h"
 
+// 禁用 C4996 警告（$tick 虽标记不可用但实际存在）
+#pragma warning(disable: 4996)
+
 #include "ll/api/memory/Hook.h"
 #include "ll/api/service/Bedrock.h"
 #include "ll/api/thread/ServerThreadExecutor.h"
@@ -21,7 +24,6 @@
 
 namespace optimized_chunk_ticking {
 
-// Hook LevelChunkTickingSystem::tick（虚函数需使用 $ 前缀）
 LL_AUTO_TYPE_INSTANCE_HOOK(
     LevelChunkTickingSystemTickHook,
     ll::memory::HookPriority::Normal,
@@ -38,18 +40,11 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
     std::unordered_map<DimensionType, std::unordered_set<ChunkPos>> chunksToTick;
     std::unordered_map<DimensionType, BlockSource*> dimToRegion;
 
-    // 获取底层的 entt::basic_registry
     auto& enttRegistry = registry.mRegistry.get();
-
-    // 遍历所有拥有 ActorComponent 的实体
     auto view = enttRegistry.template view<ActorComponent>();
     for (auto entity : view) {
-        // 正确构造 EntityContext
-        EntityContext ctx;
-        ctx.mRegistry = registry;                // EntityRegistry&
-        ctx.mEnTTRegistry = enttRegistry;         // entt::basic_registry&
-        ctx.mEntity = entity;                     // EntityId
-
+        // 聚合初始化 EntityContext（成员顺序与声明一致）
+        EntityContext ctx{registry, enttRegistry, entity};
         Actor* actor = Actor::tryGetFromEntity(ctx, false);
         if (!actor) continue;
 
@@ -64,7 +59,6 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
         Vec3 pos = actor->getPosition();
         ChunkPos center((int)std::floor(pos.x) >> 4, (int)std::floor(pos.z) >> 4);
 
-        // 遍历周围区块（强制转换 range 为 int 以避免符号警告）
         for (int dx = -static_cast<int>(range); dx <= static_cast<int>(range); ++dx) {
             for (int dz = -static_cast<int>(range); dz <= static_cast<int>(range); ++dz) {
                 ChunkPos cp(center.x + dx, center.z + dz);
@@ -75,7 +69,6 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
         }
     }
 
-    // 执行区块 tick
     for (auto& [dimId, chunkSet] : chunksToTick) {
         BlockSource* region = dimToRegion[dimId];
         if (!region) continue;
